@@ -52,7 +52,7 @@ plt.ylabel('Average RMSE')
 plt.legend()
 plt.show()
 
-# Investigate the impact of the number of neighbors
+# Look at the impact of the number of neighbors (easy peasy)
 ks = range(1, 101, 5)
 user_cf_k_results = defaultdict(list)
 item_cf_k_results = defaultdict(list)

@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial.distance import cdist
 from time import time
 
-
+# Simple stuff - load the data
 def load_data(data_path, label_path):
     data = np.loadtxt(data_path, delimiter=',')
     labels = np.loadtxt(label_path, delimiter=',')
@@ -15,13 +15,13 @@ def cosine_similarity(X, Y):
     return np.dot(X, Y.T) / (X_norm * Y_norm.T)
 
 
-def generalized_jaccard_similarity(X, Y):
+def jaccard_similarity(X, Y):
     min_intersection = np.minimum(X[:, np.newaxis, :], Y[np.newaxis, :, :]).sum(axis=2)
     max_union = np.maximum(X[:, np.newaxis, :], Y[np.newaxis, :, :]).sum(axis=2)
     return min_intersection / max_union
 
 
-def kmeans(X, n_clusters=10, distance_metric='euclidean', max_iter=10000):
+def kmeans(X, n_clusters=10, distance_metric='euclidean', max_iter=1000):
     np.random.seed(42)
     centroids = X[np.random.choice(X.shape[0], n_clusters, replace=False), :]
     previous_centroids = centroids.copy()
@@ -36,14 +36,14 @@ def kmeans(X, n_clusters=10, distance_metric='euclidean', max_iter=10000):
         elif distance_metric == 'cosine':
             distances = 1 - cosine_similarity(X, centroids)
         elif distance_metric == 'jaccard':
-            distances = 1 - generalized_jaccard_similarity(X, centroids)
+            distances = 1 - jaccard_similarity(X, centroids)
         else:
             raise ValueError("Unsupported distance metric")
 
         labels = np.argmin(distances, axis=1)
         new_centroids = np.array([X[labels == j].mean(axis=0) for j in range(n_clusters)])
 
-        if np.all(new_centroids == previous_centroids):
+        if np.all(new_centroids == previous_centroids): # don't forget to uncomment this
             break
 
         new_sse = np.sum((X - centroids[labels]) ** 2)
@@ -61,8 +61,8 @@ def kmeans(X, n_clusters=10, distance_metric='euclidean', max_iter=10000):
     return centroids, labels, iterations, sse, duration
 
 
-data_path = 'data.csv'  # Update this path
-label_path = 'label.csv'  # Update this path
+data_path = 'data.csv'
+label_path = 'label.csv'
 
 data, labels = load_data(data_path, label_path)
 
