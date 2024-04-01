@@ -1,88 +1,82 @@
 import numpy as np
-import pandas as pd
-from sklearn.metrics import pairwise_distances
-from sklearn.preprocessing import StandardScaler
-from collections import Counter
+from scipy.spatial.distance import cdist
+from time import time
 
-class CustomKMeans:
-    def __init__(self, n_clusters, max_iter=500, tol=1e-4, dist_metric='euclidean'):
-        self.n_clusters = n_clusters
-        self.max_iter = max_iter
-        self.tol = tol
-        self.dist_metric = dist_metric
-        self.centroids = None
-        self.labels = None
-        self.sse = None
 
-    def initialize_centroids(self, data):
-        np.random.seed(42)
-        self.centroids = data[np.random.choice(data.shape[0], self.n_clusters, replace=False)]
-
-    def compute_distances(self, data):
-        if self.dist_metric in ['euclidean', 'cosine']:
-            return pairwise_distances(data, self.centroids, metric=self.dist_metric)
-        elif self.dist_metric == 'jaccard':
-            return 1 - self.generalized_jaccard_similarity(data, self.centroids)
-        else:
-            raise ValueError("Unsupported distance metric.")
-
-    def generalized_jaccard_similarity(self, data, centroids):
-        min_values = np.minimum.outer(data, centroids)
-        max_values = np.maximum.outer(data, centroids)
-        similarity = np.sum(min_values, axis=2) / np.sum(max_values, axis=2)
-        return similarity
-
-    def assign_clusters(self, distances):
-        return np.argmin(distances, axis=1)
-
-    def update_centroids(self, data, labels):
-        new_centroids = np.array([data[labels == i].mean(axis=0) for i in range(self.n_clusters)])
-        return new_centroids
-
-    def compute_sse(self, data, labels):
-        distances = np.min(self.compute_distances(data), axis=1)
-        self.sse = np.sum(distances ** 2)
-
-    def fit(self, data):
-        self.initialize_centroids(data)
-        for i in range(self.max_iter):
-            distances = self.compute_distances(data)
-            new_labels = self.assign_clusters(distances)
-            new_centroids = self.update_centroids(data, new_labels)
-            if np.allclose(self.centroids, new_centroids, atol=self.tol):
-                break
-            self.centroids = new_centroids
-            self.labels = new_labels
-            self.compute_sse(data, new_labels)
-
-def calculate_accuracy(true_labels, predicted_labels):
-    label_mapping = {}
-    for k in np.unique(predicted_labels):
-        cluster_labels = true_labels[predicted_labels == k]
-        most_common_label = Counter(cluster_labels).most_common(1)[0][0]
-        label_mapping[k] = most_common_label
-
-    mapped_predictions = np.array([label_mapping[cluster] for cluster in predicted_labels])
-    accuracy = np.mean(mapped_predictions == true_labels)
-    return accuracy
-
-def load_data():
-    data = pd.read_csv('data.csv', header=None).values
-    labels = pd.read_csv('label.csv', header=None).squeeze().values
+def load_data(data_path, label_path):
+    data = np.loadtxt(data_path, delimiter=',')
+    labels = np.loadtxt(label_path, delimiter=',')
     return data, labels
 
-# Load the data
-data, labels = load_data()  #Don't forget to implement this
-n_clusters = len(np.unique(labels))
 
-# Fit models
+def cosine_similarity(X, Y):
+    X_norm = np.linalg.norm(X, axis=1, keepdims=True)
+    Y_norm = np.linalg.norm(Y, axis=1, keepdims=True)
+    return np.dot(X, Y.T) / (X_norm * Y_norm.T)
+
+
+def generalized_jaccard_similarity(X, Y):
+    min_intersection = np.minimum(X[:, np.newaxis, :], Y[np.newaxis, :, :]).sum(axis=2)
+    max_union = np.maximum(X[:, np.newaxis, :], Y[np.newaxis, :, :]).sum(axis=2)
+    return min_intersection / max_union
+
+
+def kmeans(X, n_clusters=10, distance_metric='euclidean', max_iter=10000):
+    np.random.seed(42)
+    centroids = X[np.random.choice(X.shape[0], n_clusters, replace=False), :]
+    previous_centroids = centroids.copy()
+    labels = np.zeros(X.shape[0])
+    sse = 0
+    iterations = 0
+    start_time = time()
+
+    for i in range(max_iter):
+        if distance_metric == 'euclidean':
+            distances = cdist(X, centroids, 'euclidean')
+        elif distance_metric == 'cosine':
+            distances = 1 - cosine_similarity(X, centroids)
+        elif distance_metric == 'jaccard':
+            distances = 1 - generalized_jaccard_similarity(X, centroids)
+        else:
+            raise ValueError("Unsupported distance metric")
+
+        labels = np.argmin(distances, axis=1)
+        new_centroids = np.array([X[labels == j].mean(axis=0) for j in range(n_clusters)])
+
+        if np.all(new_centroids == previous_centroids):
+            break
+
+        new_sse = np.sum((X - centroids[labels]) ** 2)
+
+        if i > 0 and new_sse > sse:
+            print("SSE increased, stopping.")
+            break
+
+        sse = new_sse
+        centroids = new_centroids
+        previous_centroids = centroids.copy()
+        iterations += 1
+
+    duration = time() - start_time
+    return centroids, labels, iterations, sse, duration
+
+
+data_path = 'data.csv'  # Update this path
+label_path = 'label.csv'  # Update this path
+
+data, labels = load_data(data_path, label_path)
+
+metrics = ['euclidean', 'cosine', 'jaccard']
 results = {}
-for dist_metric in ['euclidean', 'cosine', 'jaccard']:
-    model = CustomKMeans(n_clusters=n_clusters, dist_metric=dist_metric)
-    model.fit(data)
-    accuracy = calculate_accuracy(labels, model.labels)
-    results[dist_metric] = (model.sse, accuracy)
 
-# Display results
-for dist_metric, (sse, accuracy) in results.items():
-    print(f"{dist_metric.capitalize()} KMeans - SSE: {sse}, Accuracy: {accuracy}")
+for metric in metrics:
+    _, _, iterations, sse, duration = kmeans(data, distance_metric=metric)
+    results[metric] = {
+        'Iterations': iterations,
+        'SSE': sse,
+        'Duration': duration
+    }
+
+for metric, result in results.items():
+    print(
+        f"Metric: {metric}, Iterations: {result['Iterations']}, SSE: {result['SSE']}, Time: {result['Duration']} seconds")
